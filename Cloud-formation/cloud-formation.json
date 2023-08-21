@@ -1,0 +1,556 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "CloudFormation template for term project",
+  "Resources": {
+    "zipBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "term-files-bucket",
+        "AccessControl": "Private"
+      }
+    },
+    "extractedBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "term-files-extracted-bucket",
+        "AccessControl": "Private"
+      }
+    },
+    "kendraInstance": {
+      "Type": "AWS::Kendra::Index",
+      "Properties": {
+        "Name": "kendraForSearch",
+        "RoleArn": "role-arn",
+        "Edition": "DEVELOPER_EDITION"
+      }
+    },
+    "kendraDataSource": {
+      "Type": "AWS::Kendra::DataSource",
+      "Properties": {
+        "IndexId": {
+          "Ref": "kendraInstance"
+        },
+        "Type": "S3",
+        "RoleArn": "role-arn",
+        "Name": "s3BucketConnector",
+        "DataSourceConfiguration": {
+          "S3Configuration": {
+            "BucketName": "term-files-textracted-bucket"
+          }
+        }
+      }
+    },
+    "textractedBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "term-files-textracted-bucket",
+        "AccessControl": "Private"
+      }
+    },
+    "zipUploadLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "zipUpload",
+        "Code": {
+          "S3Bucket": "term-project-lambdas",
+          "S3Key": "zipUpload.zip"
+        },
+        "Role": "role-arn",
+        "Runtime": "nodejs14.x",
+        "Timeout": 600,
+        "Handler": "index.handler"
+      }
+    },
+    "zipToFilesAndExtractLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "zipToFilesAndExtract",
+        "Code": {
+          "S3Bucket": "term-project-lambdas",
+          "S3Key": "zipToFilesAndExtract.zip"
+        },
+        "Role": "role-arn",
+        "Runtime": "nodejs14.x",
+        "Timeout": 600,
+        "Handler": "index.handler"
+      }
+    },
+    "textExtractLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "textExtract",
+        "Code": {
+          "S3Bucket": "term-project-lambdas",
+          "S3Key": "textExtract.zip"
+        },
+        "Role": "role-arn",
+        "Runtime": "nodejs18.x",
+        "Environment": {
+          "Variables": {
+            "kendraId": {
+              "Ref": "kendraInstance"
+            },
+            "kendraDataSourceId": {
+              "Fn::GetAtt": ["kendraDataSource", "Id"]
+            }
+          }
+        },
+        "Timeout": 600,
+        "Handler": "index.handler"
+      }
+    },
+    "kendraResultsLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "kendraResults",
+        "Code": {
+          "S3Bucket": "term-project-lambdas",
+          "S3Key": "kendraResults.zip"
+        },
+        "Role": "role-arn",
+        "Runtime": "nodejs18.x",
+        "Environment": {
+          "Variables": {
+            "kendraId": {
+              "Ref": "kendraInstance"
+            },
+            "kendraDataSourceId": {
+              "Fn::GetAtt": ["kendraDataSource", "Id"]
+            }
+          }
+        },
+        "Timeout": 600,
+        "Handler": "index.handler"
+      }
+    },
+    "apiGateway": {
+      "Type": "AWS::ApiGateway::RestApi",
+      "Properties": {
+        "Name": "term-project",
+        "EndpointConfiguration": {
+          "Types": ["REGIONAL"]
+        }
+      }
+    },
+    "GatewayResponse4": {
+      "Type": "AWS::ApiGateway::GatewayResponse",
+      "Properties": {
+        "ResponseParameters": {
+          "gatewayresponse.header.Access-Control-Allow-Origin": "'*'",
+          "gatewayresponse.header.Access-Control-Allow-Methods": "'OPTIONS,POST'",
+          "gatewayresponse.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        },
+        "ResponseType": "DEFAULT_4XX",
+        "RestApiId": {
+          "Ref": "apiGateway"
+        },
+        "StatusCode": "200"
+      }
+    },
+    "GatewayResponse5": {
+      "Type": "AWS::ApiGateway::GatewayResponse",
+      "Properties": {
+        "ResponseParameters": {
+          "gatewayresponse.header.Access-Control-Allow-Origin": "'*'",
+          "gatewayresponse.header.Access-Control-Allow-Methods": "'OPTIONS,POST'",
+          "gatewayresponse.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        },
+        "ResponseType": "DEFAULT_5XX",
+        "RestApiId": {
+          "Ref": "apiGateway"
+        },
+        "StatusCode": "200"
+      }
+    },
+    "uploadApiResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "apiGateway"
+        },
+        "ParentId": {
+          "Fn::GetAtt": ["apiGateway", "RootResourceId"]
+        },
+        "PathPart": "upload"
+      }
+    },
+    "searchApiResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "apiGateway"
+        },
+        "ParentId": {
+          "Fn::GetAtt": ["apiGateway", "RootResourceId"]
+        },
+        "PathPart": "search"
+      }
+    },
+    "apiMethodOptions1": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "apiGateway"
+        },
+        "ResourceId": {
+          "Ref": "uploadApiResource"
+        },
+        "HttpMethod": "OPTIONS",
+        "AuthorizationType": "NONE",
+        "Integration": {
+          "Type": "MOCK",
+          "IntegrationResponses": [
+            {
+              "StatusCode": "200",
+              "ResponseParameters": {
+                "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+                "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,POST'",
+                "method.response.header.Access-Control-Allow-Origin": "'*'"
+              },
+              "ResponseTemplates": {
+                "application/json": "{}"
+              }
+            }
+          ]
+        },
+        "MethodResponses": [
+          {
+            "StatusCode": "200",
+            "ResponseParameters": {
+              "method.response.header.Access-Control-Allow-Headers": false,
+              "method.response.header.Access-Control-Allow-Methods": false,
+              "method.response.header.Access-Control-Allow-Origin": false
+            },
+            "ResponseModels": {
+              "application/json": "Empty"
+            }
+          }
+        ]
+      }
+    },
+    "apiMethodOptions2": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "apiGateway"
+        },
+        "ResourceId": {
+          "Ref": "searchApiResource"
+        },
+        "HttpMethod": "OPTIONS",
+        "AuthorizationType": "NONE",
+        "Integration": {
+          "Type": "MOCK",
+          "IntegrationResponses": [
+            {
+              "StatusCode": "200",
+              "ResponseParameters": {
+                "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+                "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,POST'",
+                "method.response.header.Access-Control-Allow-Origin": "'*'"
+              },
+              "ResponseTemplates": {
+                "application/json": "{}"
+              }
+            }
+          ]
+        },
+        "MethodResponses": [
+          {
+            "StatusCode": "200",
+            "ResponseParameters": {
+              "method.response.header.Access-Control-Allow-Headers": false,
+              "method.response.header.Access-Control-Allow-Methods": false,
+              "method.response.header.Access-Control-Allow-Origin": false
+            },
+            "ResponseModels": {
+              "application/json": "Empty"
+            }
+          }
+        ]
+      }
+    },
+    "uploadApiMethodPost": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "apiGateway"
+        },
+        "ResourceId": {
+          "Ref": "uploadApiResource"
+        },
+        "HttpMethod": "POST",
+        "AuthorizationType": "NONE",
+        "ApiKeyRequired": true,
+        "Integration": {
+          "Type": "AWS",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Sub": "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${zipUploadLambda.Arn}/invocations"
+          },
+          "IntegrationResponses": [
+            {
+              "StatusCode": "200",
+              "ResponseParameters": {
+                "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+                "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,POST'",
+                "method.response.header.Access-Control-Allow-Origin": "'*'"
+              }
+            }
+          ],
+          "Credentials": "role-arn"
+        },
+        "MethodResponses": [
+          {
+            "StatusCode": "200",
+            "ResponseModels": {
+              "application/json": "Empty"
+            },
+            "ResponseParameters": {
+              "method.response.header.Access-Control-Allow-Headers": false,
+              "method.response.header.Access-Control-Allow-Methods": false,
+              "method.response.header.Access-Control-Allow-Origin": false
+            }
+          }
+        ]
+      }
+    },
+    "searchApiMethodPost": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "apiGateway"
+        },
+        "ResourceId": {
+          "Ref": "searchApiResource"
+        },
+        "HttpMethod": "POST",
+        "AuthorizationType": "NONE",
+        "ApiKeyRequired": true,
+        "Integration": {
+          "Type": "AWS",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Sub": "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${kendraResultsLambda.Arn}/invocations"
+          },
+          "IntegrationResponses": [
+            {
+              "StatusCode": "200",
+              "ResponseParameters": {
+                "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+                "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,POST'",
+                "method.response.header.Access-Control-Allow-Origin": "'*'"
+              }
+            }
+          ],
+          "Credentials": "role-arn"
+        },
+        "MethodResponses": [
+          {
+            "StatusCode": "200",
+            "ResponseModels": {
+              "application/json": "Empty"
+            },
+            "ResponseParameters": {
+              "method.response.header.Access-Control-Allow-Headers": false,
+              "method.response.header.Access-Control-Allow-Methods": false,
+              "method.response.header.Access-Control-Allow-Origin": false
+            }
+          }
+        ]
+      }
+    },
+    "usagePlan": {
+      "Type": "AWS::ApiGateway::UsagePlan",
+      "Properties": {
+        "ApiStages": [
+          {
+            "ApiId": {
+              "Ref": "apiGateway"
+            },
+            "Stage": {
+              "Ref": "apiStage"
+            }
+          }
+        ],
+        "UsagePlanName": "usagePlan"
+      }
+    },
+    "usagePlanKey": {
+      "Type": "AWS::ApiGateway::UsagePlanKey",
+      "Properties": {
+        "KeyId": {
+          "Ref": "apiKey"
+        },
+        "KeyType": "API_KEY",
+        "UsagePlanId": {
+          "Ref": "usagePlan"
+        }
+      }
+    },
+    "apiKey": {
+      "Type": "AWS::ApiGateway::ApiKey",
+      "Properties": {
+        "Name": "term-project-key",
+        "Description": "API Key allapis in term project",
+        "Enabled": true,
+        "GenerateDistinctId": true,
+        "Value": "api-key"
+      }
+    },
+    "apiStage": {
+      "Type": "AWS::ApiGateway::Stage",
+      "Properties": {
+        "DeploymentId": {
+          "Ref": "deployment"
+        },
+        "RestApiId": {
+          "Ref": "apiGateway"
+        },
+        "StageName": "dev"
+      }
+    },
+    "deployment": {
+      "Type": "AWS::ApiGateway::Deployment",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "apiGateway"
+        }
+      },
+      "DependsOn": ["uploadApiMethodPost", "searchApiMethodPost"]
+    },
+    "frontendApplication": {
+      "Type": "AWS::ElasticBeanstalk::Application",
+      "Properties": {
+        "Description": "Elastic Beanstalk Application for the Frontend App",
+        "ApplicationName": "term-project-frontend"
+      }
+    },
+    "frontendAppVersion": {
+      "Type": "AWS::ElasticBeanstalk::ApplicationVersion",
+      "Properties": {
+        "ApplicationName": {
+          "Ref": "frontendApplication"
+        },
+        "Description": "Application Version of the Frontend App",
+        "SourceBundle": {
+          "S3Bucket": "term-project-frontend",
+          "S3Key": "react-app.zip"
+        }
+      }
+    },
+    "frontendAppConfigTemplate": {
+      "Type": "AWS::ElasticBeanstalk::ConfigurationTemplate",
+      "Properties": {
+        "ApplicationName": {
+          "Ref": "frontendApplication"
+        },
+        "Description": "Configuration Template for the Frontend App",
+        "SolutionStackName": "64bit Amazon Linux 2 v5.8.4 running Node.js 18",
+        "OptionSettings": [
+          {
+            "Namespace": "aws:autoscaling:launchconfiguration",
+            "OptionName": "InstanceType",
+            "Value": "t3.micro"
+          },
+          {
+            "Namespace": "aws:autoscaling:launchconfiguration",
+            "OptionName": "EC2KeyName",
+            "Value": "vockey"
+          },
+          {
+            "Namespace": "aws:autoscaling:launchconfiguration",
+            "OptionName": "IamInstanceProfile",
+            "Value": "LabInstanceProfile"
+          },
+          {
+            "Namespace": "aws:elasticbeanstalk:environment",
+            "OptionName": "ServiceRole",
+            "Value": "role-arn"
+          },
+          {
+            "Namespace": "aws:elasticbeanstalk:environment",
+            "OptionName": "EnvironmentType",
+            "Value": "SingleInstance"
+          },
+          {
+            "Namespace": "aws:elasticbeanstalk:application:environment",
+            "OptionName": "REACT_APP_SEARCH_API",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "https://",
+                  {
+                    "Ref": "apiGateway"
+                  },
+                  ".execute-api.",
+                  {
+                    "Ref": "AWS::Region"
+                  },
+                  ".amazonaws.com/dev/search"
+                ]
+              ]
+            }
+          },
+          {
+            "Namespace": "aws:elasticbeanstalk:application:environment",
+            "OptionName": "REACT_APP_UPLOAD_API",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "https://",
+                  {
+                    "Ref": "apiGateway"
+                  },
+                  ".execute-api.",
+                  {
+                    "Ref": "AWS::Region"
+                  },
+                  ".amazonaws.com/dev/upload"
+                ]
+              ]
+            }
+          },
+          {
+            "Namespace": "aws:elasticbeanstalk:application:environment",
+            "OptionName": "REACT_APP_API_KEY",
+            "Value": "api-key"
+          }
+        ]
+      }
+    },
+    "frontendAppEnvironment": {
+      "Type": "AWS::ElasticBeanstalk::Environment",
+      "Properties": {
+        "ApplicationName": {
+          "Ref": "frontendApplication"
+        },
+        "EnvironmentName": "frontend-app-environment",
+        "TemplateName": {
+          "Ref": "frontendAppConfigTemplate"
+        },
+        "VersionLabel": {
+          "Ref": "frontendAppVersion"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "ApplicationURL": {
+      "Description": "URL of the Elastic Beanstalk Frontend application",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": ["frontendAppEnvironment", "EndpointURL"]
+            }
+          ]
+        ]
+      }
+    }
+  }
+}
